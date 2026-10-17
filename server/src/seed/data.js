@@ -1,4 +1,6 @@
-const BUCKET = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample';
+// Media is served from server/media via the Express static route `/media`.
+// Run `scripts/fetch-media.sh` once before seeding to download the open-license clips.
+const MEDIA = '/media';
 
 export const titles = [
   {
@@ -7,8 +9,8 @@ export const titles = [
       'A gentle giant rabbit wakes into a peaceful morning that turns into a campaign of playful revenge against three rodent bullies. Our primary test title with a fully authored AI timeline.',
     durationSeconds: 596,
     genres: ['animation', 'comedy', 'family'],
-    videoAssetUrl: `${BUCKET}/BigBuckBunny.mp4`,
-    posterUrl: `${BUCKET}/images/BigBuckBunny.jpg`,
+    videoAssetUrl: `${MEDIA}/big-buck-bunny.mp4`,
+    posterUrl: `${MEDIA}/posters/big-buck-bunny.svg`,
     year: 2008,
     timeline: [
       { ts: 0, type: 'scene', text: 'Opening title cards over a meadow at sunrise.' },
@@ -71,8 +73,8 @@ export const titles = [
       'Two characters, Proog and Emo, navigate a vast surreal machine. The first open movie ever made, produced with Blender.',
     durationSeconds: 653,
     genres: ['animation', 'sci-fi', 'surreal'],
-    videoAssetUrl: `${BUCKET}/ElephantsDream.mp4`,
-    posterUrl: `${BUCKET}/images/ElephantsDream.jpg`,
+    videoAssetUrl: `${MEDIA}/elephants-dream.mp4`,
+    posterUrl: `${MEDIA}/posters/elephants-dream.svg`,
     year: 2006,
     timeline: [
       { ts: 0, type: 'scene', text: 'Cold open: a man falls through a dark industrial shaft.' },
@@ -101,8 +103,8 @@ export const titles = [
       'A lonely girl named Sintel searches a harsh world for the dragon hatchling she once rescued. Epic Blender short film.',
     durationSeconds: 888,
     genres: ['animation', 'fantasy', 'adventure'],
-    videoAssetUrl: `${BUCKET}/Sintel.mp4`,
-    posterUrl: `${BUCKET}/images/Sintel.jpg`,
+    videoAssetUrl: `${MEDIA}/sintel.mp4`,
+    posterUrl: `${MEDIA}/posters/sintel.svg`,
     year: 2010,
     timeline: [
       { ts: 0, type: 'scene', text: 'Snowbound prologue: Sintel faces a frost giant atop a frozen peak.' },
@@ -122,35 +124,6 @@ export const titles = [
         options: [
           { id: 'a', label: 'Original caption', text: 'He followed the call of his own kind.' },
           { id: 'b', label: 'Softer caption', text: 'Some bonds stretch before they break.' },
-        ],
-      },
-    ],
-  },
-  {
-    name: 'Tears of Steel',
-    description:
-      'In a ruined Amsterdam overrun by machines, a team of scientists tries to prevent an apocalypse using a flashback of memories.',
-    durationSeconds: 734,
-    genres: ['sci-fi', 'action', 'live-action'],
-    videoAssetUrl: `${BUCKET}/TearsOfSteel.mp4`,
-    posterUrl: `${BUCKET}/images/TearsOfSteel.jpg`,
-    year: 2012,
-    timeline: [
-      { ts: 0, type: 'scene', text: 'Amsterdam streets: war machines roam a city rebuilt after the robots took over.' },
-      { ts: 120, type: 'character', characterId: 'c_rift', characterName: 'Rift', text: 'The small spherical scout robot the team captures and tries to turn.' },
-      { ts: 240, type: 'character', characterId: 'c_teo', characterName: 'Teo', text: 'Teo, former soldier leading the resistance team that wants to rewrite history.' },
-      { ts: 260, type: 'trivia', text: 'Tears of Steel (2012) was a Blender + VFX community live-action hybrid project.' },
-      { ts: 380, type: 'glossary', term: 'Memory reconstruction', definition: 'The teams plan: rebuild a key moment as a 3D memory so the past can be observed and changed.' },
-      { ts: 480, type: 'scene', text: 'Battle on the Dam: the war machine attacks while the memory must stay intact.' },
-      { ts: 640, type: 'scene', text: 'The ending reveals whether the mission to save the future succeeded.' },
-      {
-        ts: 470,
-        type: 'variationPoint',
-        variationId: 'v_01',
-        text: 'Battle briefing caption variant',
-        options: [
-          { id: 'a', label: 'Original caption', text: 'Protect the memory at all costs.' },
-          { id: 'b', label: 'Alternate caption', text: 'The past is the only weapon we have left.' },
         ],
       },
     ],

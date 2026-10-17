@@ -53,6 +53,7 @@ export class Room {
   }
 
   snapshotFor(socket) {
+    const isRequesterHost = socket.data.user.id === this.hostUserId;
     return {
       room: {
         watchSpaceId: this.id,
@@ -64,6 +65,7 @@ export class Room {
         hostUserId: this.hostUserId,
         status: this.status,
         settings: this.doc.settings,
+        inviteCode: isRequesterHost ? this.doc.inviteCode : undefined,
       },
       clock: this.clock.snapshot(),
       serverNow: Date.now(),
