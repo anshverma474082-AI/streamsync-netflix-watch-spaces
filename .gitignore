@@ -1,0 +1,19 @@
+# Node modules
+node_modules/
+
+# Environment — secrets must never be committed (PRD §10.1)
+.env
+.env.local
+.env.*.local
+
+# Build output
+client/dist/
+server/coverage/
+
+# Media cache
+server/media/*.mp4
+
+# OS / editor
+.DS_Store
+*.log
+dist/
