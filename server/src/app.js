@@ -2,8 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { loadEnv } from './config/env.js';
-import { errorHandler } from './middleware/auth.js';
+import { authenticate, errorHandler } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
+import titleRoutes from './routes/titles.js';
+import watchSpaceRoutes from './routes/watchSpaces.js';
 
 export function createApp() {
   const env = loadEnv();
@@ -16,6 +18,8 @@ export function createApp() {
   app.get('/api/v1/health', (req, res) => res.json({ ok: true, service: 'streamsync-api', uptime: process.uptime() }));
 
   app.use('/api/v1/auth', authRoutes);
+  app.use('/api/v1/titles', authenticate, titleRoutes);
+  app.use('/api/v1/watch-spaces', authenticate, watchSpaceRoutes);
 
   app.use((req, res) => res.status(404).json({ error: `No route: ${req.method} ${req.originalUrl}` }));
   app.use(errorHandler);
