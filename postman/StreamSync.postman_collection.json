@@ -1,0 +1,182 @@
+{
+  "info": {
+    "name": "StreamSync API",
+    "description": "AI-Driven Hyper-Personalized Interactive Content & Social Watch Spaces — full REST surface. Set collection variable `hostToken`/`viewerToken`/`adminToken` by running the Auth folder first (login responses auto-store tokens).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000/api/v1" },
+    { "key": "hostToken", "value": "" },
+    { "key": "viewerToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "titleId", "value": "" },
+    { "key": "watchSpaceId", "value": "" }
+  ],
+  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{viewerToken}}", "type": "string" }] },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register viewer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"new.viewer@example.com\",\n  \"displayName\": \"New Viewer\",\n  \"password\": \"super-secret-1\"\n}", "options": { "raw": { "language": "json" } } },
+            "auth": { "type": "noauth" }
+          }
+        },
+        {
+          "name": "Login (host)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('hostToken', pm.response.json().accessToken);", "pm.test('200 + token', () => pm.response.to.have.status(200) && !!pm.response.json().accessToken);"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"host@streamsync.dev\",\n  \"password\": \"streamsync-host-1\"\n}", "options": { "raw": { "language": "json" } } },
+            "auth": { "type": "noauth" }
+          }
+        },
+        {
+          "name": "Login (viewer Ana)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('viewerToken', pm.response.json().accessToken);"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"ana@streamsync.dev\",\n  \"password\": \"streamsync-fan-1\"\n}", "options": { "raw": { "language": "json" } } },
+            "auth": { "type": "noauth" }
+          }
+        },
+        {
+          "name": "Login (admin)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('adminToken', pm.response.json().accessToken);"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@streamsync.dev\",\n  \"password\": \"streamsync-admin-1\"\n}", "options": { "raw": { "language": "json" } } },
+            "auth": { "type": "noauth" }
+          }
+        },
+        { "name": "Me", "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" } },
+        {
+          "name": "Save preferences",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/me/preferences",
+            "body": { "mode": "raw", "raw": "{\n  \"subtitleLocale\": \"hi\",\n  \"genreAffinity\": [\"sci-fi\", \"action\"]\n}", "options": { "raw": { "language": "json" } } }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Titles",
+      "item": [
+        {
+          "name": "List titles",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('titleId', pm.response.json().titles[0]._id);"], "type": "text/javascript" } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/titles" }
+        },
+        { "name": "Get title", "request": { "method": "GET", "url": "{{baseUrl}}/titles/{{titleId}}" } },
+        { "name": "Timeline (windowed)", "request": { "method": "GET", "url": "{{baseUrl}}/titles/{{titleId}}/timeline?from=100&to=250" } },
+        { "name": "Timeline schema", "request": { "method": "GET", "url": "{{baseUrl}}/titles/{{titleId}}/timeline/schema" } },
+        {
+          "name": "Upload timeline (admin)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 ingested', () => pm.response.to.have.status(200) && pm.response.json().ingested === 1);"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }, { "key": "authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/titles/{{titleId}}/timeline?mode=merge",
+            "body": { "mode": "raw", "raw": "{\n  \"timeline\": [\n    { \"ts\": 45, \"type\": \"trivia\", \"text\": \"Postman-authored trivia event.\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          }
+        },
+        {
+          "name": "Upload timeline — invalid (expect 422 per-path)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('422 with details', () => { pm.response.to.have.status(422); pm.expect(pm.response.json().details[0]).to.have.property('path'); });"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }, { "key": "authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/titles/{{titleId}}/timeline",
+            "body": { "mode": "raw", "raw": "{\n  \"timeline\": [\n    { \"ts\": -5, \"type\": \"banana\" }\n  ]\n}", "options": { "raw": { "language": "json" } } }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Watch Spaces",
+      "item": [
+        {
+          "name": "Create space (host)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('watchSpaceId', pm.response.json().watchSpaceId);", "pm.test('invite code issued', () => pm.expect(pm.response.json().inviteCode).to.match(/^NX-/));"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }, { "key": "authorization", "value": "Bearer {{hostToken}}" }],
+            "url": "{{baseUrl}}/watch-spaces",
+            "body": { "mode": "raw", "raw": "{\n  \"titleId\": \"{{titleId}}\",\n  \"roomName\": \"Postman Demo Room\",\n  \"maxParticipants\": 10,\n  \"aiVerbosity\": \"normal\",\n  \"votingEnabled\": true\n}", "options": { "raw": { "language": "json" } } }
+          }
+        },
+        { "name": "Live rooms", "request": { "method": "GET", "url": "{{baseUrl}}/watch-spaces" } },
+        { "name": "Room detail", "request": { "method": "GET", "url": "{{baseUrl}}/watch-spaces/{{watchSpaceId}}" } },
+        { "name": "Resolve invite code", "request": { "method": "GET", "url": "{{baseUrl}}/watch-spaces/invite/NX-XXXXXXXX" } },
+        {
+          "name": "Ask AI co-pilot (grounded)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('grounded with citations', () => { const j = pm.response.json(); pm.expect(j.grounded).to.be.true; pm.expect(j.sourceEvents.length).to.be.above(0); });"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/watch-spaces/{{watchSpaceId}}/ai/ask",
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"who is Frank?\",\n  \"positionSeconds\": 170\n}", "options": { "raw": { "language": "json" } } }
+          }
+        },
+        {
+          "name": "Ask AI co-pilot (must refuse — no fabrication)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('refuses unknown entity', () => pm.expect(pm.response.json().grounded).to.be.false);"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/watch-spaces/{{watchSpaceId}}/ai/ask",
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"who is the dragon Zaroth?\",\n  \"positionSeconds\": 170\n}", "options": { "raw": { "language": "json" } } }
+          }
+        },
+        {
+          "name": "End space (host)",
+          "request": { "method": "POST", "header": [{ "key": "authorization", "value": "Bearer {{hostToken}}" }], "url": "{{baseUrl}}/watch-spaces/{{watchSpaceId}}/end" } }
+      ]
+    },
+    {
+      "name": "Recommendations & Analytics",
+      "item": [
+        {
+          "name": "My rail",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('rail + model meta', () => { const j = pm.response.json(); pm.expect(j).to.have.property('recommendations'); pm.expect(j.model).to.have.property('trainedAt'); });"], "type": "text/javascript" } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/recommendations/me?limit=8" }
+        },
+        {
+          "name": "Rate a title",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "url": "{{baseUrl}}/recommendations/me/ratings",
+            "body": { "mode": "raw", "raw": "{\n  \"titleId\": \"{{titleId}}\",\n  \"rating\": 4.5\n}", "options": { "raw": { "language": "json" } } }
+          }
+        },
+        { "name": "My watch history", "request": { "method": "GET", "url": "{{baseUrl}}/recommendations/me/interactions" } },
+        {
+          "name": "Retrain model (admin, expect 403 for viewer)",
+          "request": { "method": "POST", "header": [{ "key": "authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/recommendations/retrain" }
+        },
+        {
+          "name": "Session analytics (admin)",
+          "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/recommendations/analytics/sessions" }
+        }
+      ]
+    },
+    {
+      "name": "Health (no auth)",
+      "request": { "method": "GET", "url": "{{baseUrl}}/health", "auth": { "type": "noauth" } }
+    }
+  ]
+}
