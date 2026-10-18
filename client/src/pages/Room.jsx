@@ -7,6 +7,7 @@ import { api } from '../api.js';
 import Player from '../components/Player.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import PresencePanel from '../components/PresencePanel.jsx';
+import VoteOverlay from '../components/VoteOverlay.jsx';
 
 export default function Room() {
   const { id } = useParams();
@@ -17,9 +18,17 @@ export default function Room() {
   const syncRef = useRef(null);
   const [invite, setInvite] = useState(params.get('code') ?? '');
   const [copied, setCopied] = useState(false);
+  const [timeline, setTimeline] = useState(null);
 
   const room = useRoom(id, invite || undefined);
   const isHost = room.meta && user && room.meta.hostUserId === user.id;
+
+  useEffect(() => {
+    if (!room.meta?.titleId) return;
+    api.timeline(room.meta.titleId, 0, room.meta.durationSeconds)
+      .then((res) => setTimeline(res.events ?? []))
+      .catch(() => setTimeline([]));
+  }, [room.meta?.titleId]);
 
   useEffect(() => {
     if (!videoRef.current || !room.socketRef.current || !room.meta || !room.initialClock) return;
@@ -84,7 +93,7 @@ export default function Room() {
       ) : (
         <div className="room-body">
           <section className="room-main">
-            <Player videoRef={videoRef} syncRef={syncRef} room={room} isHost={isHost} meta={meta} user={user} />
+            <Player videoRef={videoRef} syncRef={syncRef} room={room} isHost={isHost} meta={meta} user={user} timeline={timeline} />
           </section>
           <aside className="room-side">
             <nav className="side-tabs">
@@ -96,6 +105,7 @@ export default function Room() {
           </aside>
         </div>
       )}
+      {room.vote && <VoteOverlay vote={room.vote} room={room} user={user} />}
     </div>
   );
 }

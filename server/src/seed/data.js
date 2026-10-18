@@ -56,6 +56,16 @@ export const titles = [
         ],
       },
       {
+        ts: 480,
+        type: 'variationPoint',
+        subtitleLocale: 'hi',
+        variationId: 'v_04',
+        text: 'Hindi subtitle pack for the revenge-build scene (auto for hi viewers, no vote needed).',
+        options: [
+          { id: 'a', label: 'Hindi pack line', text: 'बनाने वाला अब अपना जाल बुनता है।' },
+        ],
+      },
+      {
         ts: 540,
         type: 'variationPoint',
         variationId: 'v_03',

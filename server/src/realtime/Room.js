@@ -2,12 +2,14 @@ import { RoomClock } from './clock.js';
 import ChatMessage from '../models/ChatMessage.js';
 import WatchSpace from '../models/WatchSpace.js';
 import { sanitizeText } from '../utils/text.js';
+import { retrieve, resolveVariationPoint } from '../ai/retrieval.js';
 
 const HOST_RECONNECT_GRACE_MS = 15_000;
 const CHAT_FLUSH_INTERVAL_MS = 2_000;
 const CHAT_FLUSH_BATCH = 20;
 const TRIVIA_TICK_MS = 500;
 const HISTORY_LIMIT = 50;
+const VOTE_DURATION_MS = 15_000;
 
 export class Room {
   constructor({ io, doc, title, registry }) {
@@ -29,6 +31,11 @@ export class Room {
     this.lastTriviaTs = -1;
     this.triviaTimer = null;
     this.hostDownTimer = null;
+    // Narrative-variation voting state (Epic 2).
+    this.activeVote = null;
+    this.voteTimer = null;
+    this.appliedVariations = new Map(); // variationId -> { optionId, text, ts, by: 'vote'|'system' }
+    this.pendingApplies = [];
     this.log('room created');
   }
 
@@ -66,6 +73,7 @@ export class Room {
         status: this.status,
         settings: this.doc.settings,
         inviteCode: isRequesterHost ? this.doc.inviteCode : undefined,
+        appliedVariations: [...this.appliedVariations.entries()].map(([variationId, v]) => ({ variationId, ...v })),
       },
       clock: this.clock.snapshot(),
       serverNow: Date.now(),
@@ -147,6 +155,9 @@ export class Room {
     socket.on('room.chat.typing', (payload) => this.onTyping(socket, payload));
     socket.on('room.chat.react', (payload) => this.onReact(socket, payload));
     socket.on('room.moderation', (payload) => this.onModeration(socket, payload));
+    socket.on('room.ai.ask', (payload) => this.onAiAsk(socket, payload));
+    socket.on('room.variation.openVote', (payload) => this.onOpenVote(socket, payload));
+    socket.on('room.variation.vote', (payload) => this.onCastVote(socket, payload));
     socket.on('room.end', () => this.onEndRequest(socket));
   }
 
@@ -228,6 +239,112 @@ export class Room {
     }));
     this.chatBuffer = [];
     ChatMessage.insertMany(rows).catch((err) => this.log('chat flush failed', { err: err.message }));
+  }
+
+  onAiAsk(socket, payload) {
+    const question = sanitizeText(payload?.question).slice(0, 400);
+    if (question.length < 2) return;
+    const positionSeconds = Number.isFinite(payload?.positionSeconds)
+      ? payload.positionSeconds
+      : this.clock.positionAt();
+    const verbosity = this.doc.settings?.aiVerbosity ?? 'normal';
+    const startedAt = Date.now();
+    const result = retrieve({ title: this.title, question, positionSeconds, verbosity });
+    const answer = {
+      questionId: payload?.questionId,
+      question,
+      positionSeconds,
+      askedBy: socket.data.user.id,
+      latencyMs: Date.now() - startedAt,
+      ...result,
+    };
+    this.stats.aiQuestionsAsked += 1;
+    this.emit('room.ai.answer', answer);
+    this.log('ai.ask', { by: socket.data.user.id, grounded: answer.grounded, latencyMs: answer.latencyMs });
+  }
+
+  onOpenVote(socket, payload) {
+    if (!this.isHost(socket)) {
+      this.emitTo(socket, 'room.error', { code: 'NOT_HOST', message: 'Only the host can open a variation vote' });
+      return;
+    }
+    if (!this.doc.settings?.votingEnabled) {
+      this.emitTo(socket, 'room.error', { code: 'VOTING_DISABLED', message: 'Group variation voting is disabled for this room' });
+      return;
+    }
+    const point = resolveVariationPoint(this.title, payload?.variationId);
+    if (!point || !Array.isArray(point.options) || point.options.length < 2) {
+      this.emitTo(socket, 'room.error', { code: 'BAD_VARIATION', message: 'Unknown or single-option variation point' });
+      return;
+    }
+    if (this.activeVote) clearTimeout(this.voteTimer);
+    this.activeVote = {
+      variationId: point.variationId,
+      ts: point.ts,
+      options: point.options.map((o) => ({ id: o.id, label: o.label, text: o.text })),
+      tally: Object.fromEntries(point.options.map((o) => [o.id, 0])),
+      voters: new Set(),
+    };
+    this.emit('room.variation.voteOpen', {
+      variationId: point.variationId,
+      ts: point.ts,
+      text: point.text,
+      options: this.activeVote.options,
+      durationMs: VOTE_DURATION_MS,
+    });
+    this.voteTimer = setTimeout(() => this.closeVote(), VOTE_DURATION_MS);
+    this.log('variation.voteOpen', { variationId: point.variationId });
+  }
+
+  onCastVote(socket, payload) {
+    const vote = this.activeVote;
+    if (!vote) {
+      this.emitTo(socket, 'room.error', { code: 'NO_ACTIVE_VOTE', message: 'No variation vote is currently open' });
+      return;
+    }
+    const optionId = payload?.optionId;
+    if (!Object.prototype.hasOwnProperty.call(vote.tally, optionId)) return;
+    const userId = socket.data.user.id;
+    if (vote.voters.has(userId)) return;
+    vote.voters.add(userId);
+    vote.tally[optionId] += 1;
+    this.emitTo(socket, 'room.variation.voteAck', { variationId: vote.variationId, optionId });
+  }
+
+  closeVote() {
+    const vote = this.activeVote;
+    if (!vote) return;
+    const entries = Object.entries(vote.tally);
+    const maxVotes = Math.max(...entries.map(([, n]) => n));
+    const winner = vote.options.find((o) => vote.tally[o.id] === maxVotes);
+    const applied = { variationId: vote.variationId, optionId: winner.id, text: winner.text ?? winner.label, ts: vote.ts, by: 'vote' };
+    this.appliedVariations.set(vote.variationId, applied);
+    this.emit('room.variation.voteClosed', { variationId: vote.variationId, tally: vote.tally, totalVotes: vote.voters.size, winnerOptionId: winner.id });
+    this.scheduleApply(applied);
+    this.activeVote = null;
+    this.voteTimer = null;
+    this.log('variation.closed', { variationId: vote.variationId, winner: winner.id, votes: vote.voters.size });
+  }
+
+  // "Applied identically and simultaneously to all connected clients" at the
+  // authored playback point: apply immediately if the room already crossed the
+  // marker, otherwise let the playback ticker fire it for everyone at the ts.
+  scheduleApply(applied) {
+    const pos = this.clock.positionAt();
+    if (pos >= applied.ts - 0.25) {
+      this.emit('room.variation.applied', applied);
+      return;
+    }
+    this.pendingApplies = (this.pendingApplies ?? []).filter((p) => p.variationId !== applied.variationId);
+    this.pendingApplies.push(applied);
+  }
+
+  flushPendingApplies(pos) {
+    if (!this.pendingApplies?.length) return;
+    const ready = this.pendingApplies.filter((p) => pos >= p.ts - 0.1);
+    if (!ready.length) return;
+    this.pendingApplies = this.pendingApplies.filter((p) => pos < p.ts - 0.1);
+    ready.forEach((p) => this.emit('room.variation.applied', p));
   }
 
   onTyping(socket, payload) {
@@ -334,9 +451,9 @@ export class Room {
 
   startTriviaTicker(fromTs) {
     this.stopTriviaTicker();
-    if (!this.doc.settings.triviaEnabled) return;
     this.lastTriviaTs = fromTs;
-    this.triviaTimer = setInterval(() => this.checkTrivia(), TRIVIA_TICK_MS);
+    // Runs regardless of triviaEnabled: also flushes scheduled variation applies.
+    this.triviaTimer = setInterval(() => this.tickPlayback(), TRIVIA_TICK_MS);
   }
 
   stopTriviaTicker() {
@@ -344,14 +461,19 @@ export class Room {
     this.triviaTimer = null;
   }
 
-  checkTrivia() {
+  tickPlayback() {
     const pos = this.clock.positionAt();
+    if (this.doc.settings.triviaEnabled) this.surfacedTrivia(pos);
+    this.flushPendingApplies(pos);
+    this.lastTriviaTs = pos;
+  }
+
+  surfacedTrivia(pos) {
     this.crossedMarkers(this.lastTriviaTs, pos, ['trivia', 'glossary', 'character', 'scene'])
       .forEach((evt) => {
         this.stats.triviaSurfaced += 1;
         this.emit('room.ai.trivia', { eventId: `${this.id}:${evt.ts}:${evt.type}`, text: evt.text, tsSeconds: evt.ts, type: evt.type });
       });
-    this.lastTriviaTs = pos;
   }
 
   crossedMarkers(fromTs, toTs, types) {
@@ -376,6 +498,8 @@ export class Room {
 
   async end() {
     this.stopTriviaTicker();
+    clearTimeout(this.voteTimer);
+    this.activeVote = null;
     this.flushChat();
     this.clock.set({ state: 'paused' });
     this.status = 'ended';
@@ -402,6 +526,7 @@ export class Room {
   close() {
     this.stopTriviaTicker();
     clearTimeout(this.hostDownTimer);
+    clearTimeout(this.voteTimer);
     this.flushChat();
   }
 }

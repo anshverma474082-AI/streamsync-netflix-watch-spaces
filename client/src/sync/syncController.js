@@ -80,6 +80,13 @@ export class SyncController {
     if (this.snapshot.state !== 'playing' && !this.video.paused) this.video.pause();
   }
 
+  // Single source of truth for the UI playhead: the host trusts the local
+  // element, everyone else derives from the authoritative room clock so the
+  // position stays correct even while paused, buffering, or being held by sync.
+  currentPosition() {
+    return this.isHost ? this.video.currentTime : this.expectedPosition();
+  }
+
   hostAction(state, positionSeconds) {
     this.snapshot = { state, positionSeconds, serverTs: Date.now(), rate: 1 };
     this.socket.emit('room.playback.update', { state, positionSeconds });

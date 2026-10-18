@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtTime } from '../sync/format.js';
 
-export default function Player({ videoRef, syncRef, room, isHost, meta, user }) {
+export default function Player({ videoRef, syncRef, room, isHost, meta, user, timeline }) {
   const [drift, setDrift] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [needsGesture, setNeedsGesture] = useState(false);
@@ -13,22 +13,17 @@ export default function Player({ videoRef, syncRef, room, isHost, meta, user }) 
     if (syncRef.current) syncRef.current.onDrift = (d) => setDrift(d);
   }, [syncRef.current]);
 
-  // Keep the scrubber glued to the actual playhead unless the host is dragging.
+  // The playhead follows the authoritative clock (or the host's element while
+  // dragging), not sporadic `timeupdate` events — a mirrored viewer is often
+  // paused or seek-held by the sync controller, which fires almost none.
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const on = () => {
-      if (!draggingRef.current) setPosition(v.currentTime);
+    const t = setInterval(() => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (!draggingRef.current) setPosition(getPosition());
       setPlaying(!v.paused);
-    };
-    v.addEventListener('timeupdate', on);
-    v.addEventListener('play', on);
-    v.addEventListener('pause', on);
-    return () => {
-      v.removeEventListener('timeupdate', on);
-      v.removeEventListener('play', on);
-      v.removeEventListener('pause', on);
-    };
+    }, 250);
+    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
@@ -50,12 +45,19 @@ export default function Player({ videoRef, syncRef, room, isHost, meta, user }) 
     syncRef.current?.hostAction(state, positionSeconds);
   }
 
+  function getPosition() {
+    const sync = syncRef.current;
+    return sync ? sync.currentPosition() : videoRef.current?.currentTime ?? 0;
+  }
+
   function onPlay() {
     setPlaying(true);
+    setPosition(getPosition());
     if (isHost) send('playing', videoRef.current.currentTime);
   }
 
   function onPause() {
+    setPosition(getPosition());
     if (!isHost) return;
     setPlaying(false);
     send('paused', videoRef.current.currentTime);
@@ -80,6 +82,37 @@ export default function Player({ videoRef, syncRef, room, isHost, meta, user }) 
   const driftMs = Math.round(Math.abs(drift) * 1000);
   const status = isHost ? 'HOST — your controls drive the room' : `synced · drift ${driftMs} ms`;
 
+  const variationPoints = useMemo(() => (timeline ?? []).filter((e) => e.type === 'variationPoint'), [timeline]);
+
+  // Non-destructive content layer: a group-voted variant applies to everyone;
+  // otherwise a viewer whose locale preference matches an authored subtitle
+  // pack sees the localized line. Neither ever interrupts playback.
+  const caption = useMemo(() => {
+    for (const p of variationPoints) {
+      const applied = room.appliedVariations[p.variationId];
+      if (applied && position >= applied.ts && position <= applied.ts + 15) {
+        return { text: applied.text, tag: 'group-voted variant' };
+      }
+    }
+    const localePoint = variationPoints
+      .filter((p) => p.subtitleLocale && position >= p.ts && position <= p.ts + 15)
+      .sort((a, b) => a.ts - b.ts)
+      .at(-1);
+    if (localePoint && user?.preferences?.subtitleLocale === localePoint.subtitleLocale) {
+      const opt = localePoint.options?.[0];
+      if (opt) return { text: opt.text, tag: `${localePoint.subtitleLocale} subtitle pack — auto for your locale` };
+    }
+    return null;
+  }, [variationPoints, position, room.appliedVariations, user]);
+
+  const openableVotes = useMemo(
+    () =>
+      variationPoints.filter(
+        (p) => !room.appliedVariations[p.variationId] && !room.vote && p.ts >= position - 30 && p.ts <= position + 60
+      ),
+    [variationPoints, position, room.appliedVariations, room.vote]
+  );
+
   return (
     <div className="player">
       <div className="video-wrap">
@@ -102,6 +135,12 @@ export default function Player({ videoRef, syncRef, room, isHost, meta, user }) 
           <div className={`trivia-card ${trivia.type}`}>
             <span className="trivia-tag">{trivia.type === 'trivia' ? 'AI trivia' : trivia.type}</span>
             {trivia.text}
+          </div>
+        )}
+        {caption && (
+          <div className="subtitle-bar">
+            <span className="subtitle-tag">{caption.tag}</span>
+            {caption.text}
           </div>
         )}
         {!isHost && needsGesture && (
@@ -135,6 +174,16 @@ export default function Player({ videoRef, syncRef, room, isHost, meta, user }) 
               onPointerUp={commitSeek}
               onKeyUp={commitSeek}
             />
+            {openableVotes.map((p) => (
+              <button
+                key={p.variationId}
+                className="btn accent sm"
+                title={p.text}
+                onClick={() => room.emit('room.variation.openVote', { variationId: p.variationId })}
+              >
+                Trigger vote @ {fmtTime(p.ts)}
+              </button>
+            ))}
           </>
         ) : (
           <span className="mirror-note">Playback mirrors the host</span>

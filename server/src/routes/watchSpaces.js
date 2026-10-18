@@ -5,6 +5,8 @@ import Title from '../models/Title.js';
 import WatchSpace from '../models/WatchSpace.js';
 import { HttpError, requireRole } from '../middleware/auth.js';
 import { generateInviteCode } from '../utils/inviteCode.js';
+import { retrieve } from '../ai/retrieval.js';
+import { sanitizeText } from '../utils/text.js';
 
 const router = Router();
 
@@ -67,6 +69,34 @@ router.get('/:id', async (req, res, next) => {
   const title = await Title.findById(ws.titleId).select('name posterUrl durationSeconds videoAssetUrl').lean();
   res.json({ watchSpace: { ...ws, title } });
 });
+
+router.post(
+  '/:id/ai/ask',
+  body('question').isString().trim().isLength({ min: 2, max: 400 }),
+  body('positionSeconds').optional().isFloat({ min: 0 }),
+  async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return next(new HttpError(422, 'Validation failed', errors.array()));
+    if (!mongoose.isValidObjectId(req.params.id)) return next(new HttpError(404, 'Watch space not found'));
+    const ws = await WatchSpace.findById(req.params.id).lean();
+    if (!ws) return next(new HttpError(404, 'Watch space not found'));
+    const title = await Title.findById(ws.titleId).lean();
+    if (!title) return next(new HttpError(404, 'Title not found'));
+    const question = sanitizeText(req.body.question).slice(0, 400);
+    const positionSeconds = Number(req.body.positionSeconds ?? 0);
+    const verbosity = ws.settings?.aiVerbosity ?? 'normal';
+    const startedAt = Date.now();
+    const result = retrieve({ title, question, positionSeconds, verbosity });
+    res.json({
+      watchSpaceId: ws._id,
+      question,
+      positionSeconds,
+      titleId: title._id,
+      latencyMs: Date.now() - startedAt,
+      ...result,
+    });
+  }
+);
 
 router.post('/:id/end', requireRole('host', 'admin'), async (req, res, next) => {
   const ws = await WatchSpace.findById(req.params.id);

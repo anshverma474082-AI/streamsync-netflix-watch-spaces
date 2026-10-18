@@ -10,7 +10,7 @@ export function useRoom(watchSpaceId, inviteCode) {
   const [trivia, setTrivia] = useState(null);
   const [answers, setAnswers] = useState([]);
   const [vote, setVote] = useState(null);
-  const [applied, setApplied] = useState(null);
+  const [appliedVariations, setAppliedVariations] = useState({});
   const [error, setError] = useState(null);
   const [initialClock, setInitialClock] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -37,6 +37,7 @@ export function useRoom(watchSpaceId, inviteCode) {
           setMeta(payload.room);
           setParticipants(payload.participants);
           setInitialClock(payload.clock);
+          setAppliedVariations(Object.fromEntries((payload.room.appliedVariations ?? []).map((v) => [v.variationId, v])));
           break;
         case 'room.presence.update':
           setParticipants((prev) => applyPresence(prev, payload));
@@ -60,14 +61,18 @@ export function useRoom(watchSpaceId, inviteCode) {
           setAnswers((a) => [...a, payload]);
           break;
         case 'room.variation.voteOpen':
-          setVote(payload);
+          setVote({ ...payload, phase: 'open', endsAt: Date.now() + (payload.durationMs ?? 15000) });
           break;
         case 'room.variation.voteClosed':
-          setVote(null);
+          setVote((v) =>
+            v && v.variationId === payload.variationId
+              ? { ...v, phase: 'closed', tally: payload.tally, totalVotes: payload.totalVotes, winnerOptionId: payload.winnerOptionId }
+              : v
+          );
           break;
         case 'room.variation.applied':
-          setVote(null);
-          setApplied(payload);
+          setAppliedVariations((m) => ({ ...m, [payload.variationId]: payload }));
+          setVote((v) => (v && v.variationId === payload.variationId ? { ...v, phase: 'applied', applied: payload } : v));
           break;
         case 'room.host.disconnected':
           setMeta((m) => (m ? { ...m, status: 'host_disconnected' } : m));
@@ -94,9 +99,10 @@ export function useRoom(watchSpaceId, inviteCode) {
   const on = (event, fn) => {
     handlersRef.current[event] = fn;
   };
+  const clearVote = () => setVote(null);
 
   return {
-    socketRef, emit, on, meta, participants, messages, typing, trivia, answers, vote, applied, error, connected, initialClock,
+    socketRef, emit, on, meta, participants, messages, typing, trivia, answers, vote, appliedVariations, clearVote, error, connected, initialClock,
     setError, setTrivia,
   };
 }
