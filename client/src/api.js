@@ -58,6 +58,14 @@ export const api = {
   byInvite: (code) => request(`/watch-spaces/invite/${code}`),
   endWatchSpace: (id) => request(`/watch-spaces/${id}/end`, { method: 'POST' }),
   liveRooms: () => request('/watch-spaces'),
+  recommendations: (limit = 8) => request(`/recommendations/me?limit=${limit}`),
+  rateTitle: (titleId, rating) => request('/recommendations/me/ratings', { method: 'POST', body: { titleId, rating } }),
+  myInteractions: () => request('/recommendations/me/interactions'),
+  retrainModel: () => request('/recommendations/retrain', { method: 'POST' }),
+  analyticsSessions: () => request('/recommendations/analytics/sessions'),
+  timelineSchema: (titleId) => request(`/titles/${titleId}/timeline/schema`),
+  uploadTimeline: (titleId, timeline, mode = 'merge') =>
+    request(`/titles/${titleId}/timeline?mode=${mode}`, { method: 'POST', body: { timeline } }),
 };
 
 export { request };

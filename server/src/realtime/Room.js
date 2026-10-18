@@ -1,6 +1,7 @@
 import { RoomClock } from './clock.js';
 import ChatMessage from '../models/ChatMessage.js';
 import WatchSpace from '../models/WatchSpace.js';
+import Interaction from '../models/Interaction.js';
 import { sanitizeText } from '../utils/text.js';
 import { retrieve, resolveVariationPoint } from '../ai/retrieval.js';
 
@@ -36,6 +37,13 @@ export class Room {
     this.voteTimer = null;
     this.appliedVariations = new Map(); // variationId -> { optionId, text, ts, by: 'vote'|'system' }
     this.pendingApplies = [];
+    // Watch-time bookkeeping (Epic 3). Presence and playback spans are
+    // accumulated in memory and reconciled to Interaction docs once, at session
+    // end — the PRD forbids persisting every playback heartbeat.
+    this.playbackSpans = [];
+    this.openSpan = null;
+    this.votesCast = 0;
+    this.variationsApplied = 0;
     this.log('room created');
   }
 
@@ -106,6 +114,7 @@ export class Room {
       socket.rooms.has(this.room) || socket.join(this.room);
       existing.socket = socket;
       existing.disconnectedAt = null;
+      this.openInterval(user.id);
       this.bindRoomEvents(socket);
       if (user.id === this.hostUserId && this.status === 'host_disconnected') this.restoreHost();
       this.stats.peakParticipants = Math.max(this.stats.peakParticipants, this.participantCount());
@@ -122,7 +131,14 @@ export class Room {
     }
     if (this.doc.settings.isLocked && user.id !== this.hostUserId) return { error: 'ROOM_LOCKED' };
     socket.join(this.room);
-    this.participants.set(user.id, { socket, displayName: user.displayName, role: user.role, joinedAt: Date.now(), muted: this.mutedUntilDisconnect.has(user.id) });
+    this.participants.set(user.id, {
+      socket,
+      displayName: user.displayName,
+      role: user.role,
+      joinedAt: Date.now(),
+      muted: this.mutedUntilDisconnect.has(user.id),
+      intervals: [{ start: Date.now(), end: null }],
+    });
     this.stats.peakParticipants = Math.max(this.stats.peakParticipants, this.participantCount());
     this.bindRoomEvents(socket);
     this.emit('room.presence.update', {
@@ -176,9 +192,85 @@ export class Room {
     const prev = this.clock.positionAt();
     const snap = this.clock.set({ state: payload.state, positionSeconds: payload.positionSeconds });
     this.emit('room.playback.update', { ...snap, issuedBy: socket.data.user.id });
-    if (snap.state === 'playing') this.startTriviaTicker(prev);
-    else this.stopTriviaTicker();
+    if (snap.state === 'playing') {
+      this.startTriviaTicker(prev);
+      this.openSpan ??= { start: Date.now() };
+    } else {
+      this.stopTriviaTicker();
+      this.closeSpan();
+    }
     this.log('playback', { state: snap.state, pos: snap.positionSeconds?.toFixed(2) });
+  }
+
+  closeSpan(nowMs = Date.now()) {
+    if (!this.openSpan) return;
+    this.playbackSpans.push({ start: this.openSpan.start, end: nowMs });
+    this.openSpan = null;
+  }
+
+  openInterval(userId) {
+    const p = this.participants.get(userId);
+    if (!p) return;
+    (p.intervals ??= []).push({ start: Date.now(), end: null });
+  }
+
+  closeInterval(userId) {
+    const p = this.participants.get(userId);
+    const open = p?.intervals?.at(-1);
+    if (open && open.end === null) open.end = Date.now();
+  }
+
+  // Seconds of actual playback this user was present for — the watched-time
+  // signal the recommender trains on.
+  watchedSecondsFor(userId) {
+    const p = this.participants.get(userId);
+    if (!p?.intervals) return 0;
+    const online = p.intervals.map((i) => [i.start, i.end ?? Date.now()]);
+    let ms = 0;
+    for (const span of this.playbackSpans) {
+      for (const [from, to] of online) {
+        ms += Math.max(0, Math.min(span.end, to) - Math.max(span.start, from));
+      }
+    }
+    return Math.round(ms / 1000);
+  }
+
+  coWatchedWith(userId) {
+    const p = this.participants.get(userId);
+    if (!p?.intervals) return [];
+    const mine = p.intervals.map((i) => [i.start, i.end ?? Date.now()]);
+    const others = [];
+    for (const [otherId, q] of this.participants) {
+      if (otherId === userId || !q.intervals) continue;
+      const theirs = q.intervals.map((i) => [i.start, i.end ?? Date.now()]);
+      const overlap = mine.some(([a, b]) => theirs.some(([c, d]) => Math.min(b, d) > Math.max(a, c) + 1000));
+      if (overlap) others.push(otherId);
+    }
+    return others;
+  }
+
+  async flushInteractions() {
+    this.closeSpan();
+    for (const [userId] of this.participants) {
+      const sessionWatched = Math.min(this.watchedSecondsFor(userId), this.title.durationSeconds);
+      if (sessionWatched <= 0) continue;
+      const existing = await Interaction.findOne({ userId, titleId: this.title._id }).lean();
+      await Interaction.findOneAndUpdate(
+        { userId, titleId: this.title._id },
+        {
+          $set: {
+            // Session minutes add to the lifetime total for this (user, title);
+            // a short re-watch must never shrink what the recommender trains on.
+            watchedSeconds: (existing?.watchedSeconds ?? 0) + sessionWatched,
+            completed: Boolean(existing?.completed) || sessionWatched >= this.title.durationSeconds * 0.9,
+            lastWatchedAt: new Date(),
+            watchSpaceId: this.id,
+          },
+          $addToSet: { coWatchedWith: { $each: this.coWatchedWith(userId) } },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).catch((err) => this.log('interaction flush failed', { err: err.message }));
+    }
   }
 
   onSyncPing(socket, payload) {
@@ -308,7 +400,13 @@ export class Room {
     if (vote.voters.has(userId)) return;
     vote.voters.add(userId);
     vote.tally[optionId] += 1;
+    this.votesCast += 1;
     this.emitTo(socket, 'room.variation.voteAck', { variationId: vote.variationId, optionId });
+  }
+
+  emitApplied(applied) {
+    this.variationsApplied += 1;
+    this.emit('room.variation.applied', applied);
   }
 
   closeVote() {
@@ -332,7 +430,7 @@ export class Room {
   scheduleApply(applied) {
     const pos = this.clock.positionAt();
     if (pos >= applied.ts - 0.25) {
-      this.emit('room.variation.applied', applied);
+      this.emitApplied(applied);
       return;
     }
     this.pendingApplies = (this.pendingApplies ?? []).filter((p) => p.variationId !== applied.variationId);
@@ -344,7 +442,7 @@ export class Room {
     const ready = this.pendingApplies.filter((p) => pos >= p.ts - 0.1);
     if (!ready.length) return;
     this.pendingApplies = this.pendingApplies.filter((p) => pos < p.ts - 0.1);
-    ready.forEach((p) => this.emit('room.variation.applied', p));
+    ready.forEach((p) => this.emitApplied(p));
   }
 
   onTyping(socket, payload) {
@@ -421,6 +519,7 @@ export class Room {
     if (!p || p.socket !== socket) return;
     p.socket = null;
     p.disconnectedAt = Date.now();
+    this.closeInterval(userId);
     this.emit('room.presence.update', { participantId: userId, displayName: p.displayName, action: 'left', participantCount: this.participantCount() });
     this.log('disconnect', { userId });
     if (userId === this.hostUserId) {
@@ -502,12 +601,16 @@ export class Room {
     this.activeVote = null;
     this.flushChat();
     this.clock.set({ state: 'paused' });
+    this.closeSpan();
+    for (const [userId] of this.participants) this.closeInterval(userId);
+    await this.flushInteractions();
     this.status = 'ended';
-    this.emit('room.ended', { summary: this.buildSummary() });
+    const summary = this.buildSummary();
+    this.emit('room.ended', { summary });
     this.log('room ended');
     await WatchSpace.updateOne(
       { _id: this.id },
-      { status: 'ended', endedAt: new Date(), summary: this.buildSummary() }
+      { status: 'ended', endedAt: new Date(), summary }
     ).catch(() => {});
     this.registry.forget(this.id);
   }
@@ -516,10 +619,18 @@ export class Room {
     const durationSeconds = this.doc.startedAt ? Math.round((Date.now() - this.doc.startedAt.getTime()) / 1000) : 0;
     return {
       durationSeconds,
+      watchedSeconds: Math.round(this.playbackSpans.reduce((s, sp) => s + (sp.end - sp.start), 0) / 1000),
       peakParticipants: this.stats.peakParticipants,
       aiQuestionsAsked: this.stats.aiQuestionsAsked,
       triviaSurfaced: this.stats.triviaSurfaced,
       chatVolume: this.stats.chatVolume,
+      votesCast: this.votesCast,
+      variationsApplied: this.variationsApplied,
+      participants: [...this.participants.entries()].map(([userId, p]) => ({
+        userId,
+        displayName: p.displayName,
+        watchedSeconds: Math.min(this.watchedSecondsFor(userId), this.title.durationSeconds),
+      })),
     };
   }
 

@@ -9,6 +9,7 @@ const interactionSchema = new mongoose.Schema(
     completed: { type: Boolean, default: false },
     rating: { type: Number, min: 0, max: 5 },
     coWatchedWith: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    lastWatchedAt: { type: Date },
   },
   { timestamps: true }
 );

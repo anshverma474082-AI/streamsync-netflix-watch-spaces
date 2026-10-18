@@ -86,8 +86,33 @@ export default function Room() {
 
       {ended ? (
         <div className="room-ended">
-          <h2>Session ended</h2>
-          <pre>{JSON.stringify(meta.summary, null, 2)}</pre>
+          <h2>Session ended — here is what your group did together</h2>
+          <div className="summary-grid">
+            {[
+              ['Room runtime', `${Math.round((meta.summary?.durationSeconds ?? 0) / 60)} min`],
+              ['Synchronized watching', `${Math.round((meta.summary?.watchedSeconds ?? 0) / 60)} min of shared playhead`],
+              ['Peak participants', meta.summary?.peakParticipants ?? 0],
+              ['Chat messages', meta.summary?.chatVolume ?? 0],
+              ['AI Co-Pilot questions', meta.summary?.aiQuestionsAsked ?? 0],
+              ['Trivia surfaced', meta.summary?.triviaSurfaced ?? 0],
+              ['Variation votes cast', meta.summary?.votesCast ?? 0],
+              ['Variations applied', meta.summary?.variationsApplied ?? 0],
+            ].map(([label, value]) => (
+              <div key={label} className="summary-cell">
+                <div className="summary-value">{value}</div>
+                <div className="summary-label">{label}</div>
+              </div>
+            ))}
+          </div>
+          {(meta.summary?.participants?.length ?? 0) > 0 && (
+            <div className="summary-participants">
+              {meta.summary.participants.map((p) => (
+                <span key={p.userId} className="reason-chip">
+                  {p.displayName}: {Math.round((p.watchedSeconds ?? 0) / 60)} min · saved to your history
+                </span>
+              ))}
+            </div>
+          )}
           <button className="btn" onClick={() => navigate('/')}>Back to home</button>
         </div>
       ) : (

@@ -9,6 +9,15 @@ const participantSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const summaryParticipantSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId },
+    displayName: String,
+    watchedSeconds: Number,
+  },
+  { _id: false }
+);
+
 const watchSpaceSchema = new mongoose.Schema(
   {
     titleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Title', required: true },
@@ -28,10 +37,14 @@ const watchSpaceSchema = new mongoose.Schema(
     endedAt: { type: Date },
     summary: {
       durationSeconds: Number,
+      watchedSeconds: Number,
       peakParticipants: Number,
       aiQuestionsAsked: Number,
       triviaSurfaced: Number,
       chatVolume: Number,
+      votesCast: Number,
+      variationsApplied: Number,
+      participants: [summaryParticipantSchema],
     },
   },
   { timestamps: true }
