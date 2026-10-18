@@ -26,6 +26,8 @@ router.post(
   body('maxParticipants').optional().isInt({ min: 2, max: 50 }),
   body('aiVerbosity').optional().isIn(['minimal', 'normal', 'chatty']),
   body('votingEnabled').optional().isBoolean(),
+  body('triviaEnabled').optional().isBoolean(),
+  body('isLocked').optional().isBoolean(),
   async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return next(new HttpError(422, 'Validation failed', errors.array()));
@@ -43,6 +45,8 @@ router.post(
         maxParticipants: req.body.maxParticipants ?? 25,
         aiVerbosity: req.body.aiVerbosity ?? 'normal',
         votingEnabled: req.body.votingEnabled ?? true,
+        triviaEnabled: req.body.triviaEnabled ?? true,
+        isLocked: req.body.isLocked ?? false,
       },
     });
     res.status(201).json({

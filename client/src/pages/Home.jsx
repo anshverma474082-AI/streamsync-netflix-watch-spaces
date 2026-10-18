@@ -7,7 +7,7 @@ export default function Home() {
   const [titles, setTitles] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [creating, setCreating] = useState(null);
-  const [settings, setSettings] = useState({ maxParticipants: 25, aiVerbosity: 'normal', votingEnabled: true });
+  const [settings, setSettings] = useState({ maxParticipants: 25, aiVerbosity: 'normal', votingEnabled: true, triviaEnabled: true, isLocked: false });
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState(null);
   const { user, logout } = useAuth();
@@ -108,6 +108,14 @@ export default function Home() {
             <label className="check">
               <input type="checkbox" checked={settings.votingEnabled} onChange={(e) => setSettings({ ...settings, votingEnabled: e.target.checked })} />
               Enable group variation voting
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={settings.triviaEnabled} onChange={(e) => setSettings({ ...settings, triviaEnabled: e.target.checked })} />
+              Surface AI trivia cards during playback
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={settings.isLocked} onChange={(e) => setSettings({ ...settings, isLocked: e.target.checked })} />
+              Invite-only room (joining requires the invite code)
             </label>
             <div className="modal-actions">
               <button className="btn ghost" onClick={() => setCreating(null)}>Cancel</button>

@@ -39,6 +39,14 @@ describe('RoomClock — authoritative playback state machine', () => {
     expect(Number.isFinite(bad.positionSeconds)).toBe(true);
   });
 
+  test('buffering freezes position like paused', () => {
+    const clock = new RoomClock();
+    clock.set({ state: 'playing', positionSeconds: 80 });
+    const snap = clock.set({ state: 'buffering' });
+    expect(snap.state).toBe('buffering');
+    expect(clock.positionAt(Date.now() + 30_000)).toBe(snap.positionSeconds);
+  });
+
   test('seek while paused jumps to the requested position', () => {
     const clock = new RoomClock();
     clock.set({ state: 'paused', positionSeconds: 10 });

@@ -23,6 +23,12 @@ export default function Room() {
   const room = useRoom(id, invite || undefined);
   const isHost = room.meta && user && room.meta.hostUserId === user.id;
 
+  const [rtt, setRtt] = useState(null);
+  useEffect(() => {
+    const t = setInterval(() => setRtt(syncRef.current?.lastRtt ?? null), 2000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     if (!room.meta?.titleId) return;
     api.timeline(room.meta.titleId, 0, room.meta.durationSeconds)
@@ -125,7 +131,7 @@ export default function Room() {
               <span className="tab active">Chat & Co-Pilot</span>
               <span className="tab count">{room.participants.filter((p) => p.online).length} online</span>
             </nav>
-            <PresencePanel room={room} isHost={isHost} currentUserId={user.id} />
+            <PresencePanel room={room} isHost={isHost} currentUserId={user.id} yourRtt={rtt} />
             <ChatPanel room={room} user={user} />
           </aside>
         </div>

@@ -187,7 +187,7 @@ export class Room {
       this.emitTo(socket, 'room.error', { code: 'NOT_HOST', message: 'Only the host controls playback' });
       return;
     }
-    const allowed = ['playing', 'paused', 'seeking'];
+    const allowed = ['playing', 'paused', 'seeking', 'buffering'];
     if (!allowed.includes(payload?.state)) return;
     const prev = this.clock.positionAt();
     const snap = this.clock.set({ state: payload.state, positionSeconds: payload.positionSeconds });
