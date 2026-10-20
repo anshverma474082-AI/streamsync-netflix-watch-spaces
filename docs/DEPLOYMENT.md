@@ -1,5 +1,11 @@
 # Deployment (24/7 cloud)
 
+**Live URL:** <https://streamsync-api-cz5d.onrender.com> — deployed as a Render free **Web
+Service** (Root Directory `server`, build `npm ci --omit=dev && cd ../client && npm ci && npm run
+build`, start `node src/server.js`) with `MEDIA_MODE=remote`, `CLIENT_ORIGIN` set to the service
+URL, and MongoDB Atlas M0 seeded with the demo data. A `render.yaml` blueprint is included for
+re-deploys.
+
 Local runs use PM2 (see README). To keep the app live when your machine is off, deploy the single
 service to Render free + MongoDB Atlas free. The repo ships a `render.yaml` blueprint, so Render
 creates everything automatically once the repo is connected.

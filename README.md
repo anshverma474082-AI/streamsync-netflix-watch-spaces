@@ -3,6 +3,11 @@
 **Netflix Full-Stack Development Internship · Track A (Full-Stack) · Stack Option B: MERN**
 **MongoDB + Express + React (Vite) + Socket.io — plain JavaScript (no TypeScript).**
 
+**Live 24/7 demo:** <https://streamsync-api-cz5d.onrender.com> (Render free + MongoDB Atlas M0;
+first request after ~15 min idle can take 30–60 s to wake up. Sign in with a **host-role** demo
+account — see the demo table below — to create a Watch Space.) See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 StreamSync lets a group of friends watch a title together in a **Watch Space** with a
 server-authoritative synchronized playhead, live chat, an **AI Content Co-Pilot** that
 answers questions strictly from each title's pre-authored metadata, group-voted
