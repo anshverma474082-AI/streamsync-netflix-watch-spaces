@@ -113,6 +113,7 @@ playback fan-out p95 **1 ms** at 25 viewers · AI answer p95 **1 ms** · API p95
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Measured latency/drift numbers |
 | [docs/evidence/TEST_REPORT.md](docs/evidence/TEST_REPORT.md) | Real test/harness output + screenshot evidence |
 | [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) | Deliberate scope decisions, results vs KPIs, limitations |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 24/7 cloud deploy: Render free + MongoDB Atlas blueprint |
 | [postman/StreamSync.postman_collection.json](postman/StreamSync.postman_collection.json) | Importable API collection |
 
 ## Security (PRD §10.1)

@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: streamsync
+    runtime: node
+    plan: free
+    rootDir: server
+    autoDeploy: true
+    buildCommand: npm ci --omit=dev && cd ../client && npm ci && npm run build
+    startCommand: node src/server.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: MONGO_URI # paste your MongoDB Atlas srv connection string
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CLIENT_ORIGIN # must match the deployed URL, e.g. https://streamsync.onrender.com
+        value: https://streamsync.onrender.com
+      - key: MEDIA_MODE # mp4s are not bundled with the code; stream from the open-license sources
+        value: remote

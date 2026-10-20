@@ -21,5 +21,6 @@ export function loadEnv() {
     accessTtl: process.env.ACCESS_TOKEN_TTL ?? '15m',
     refreshTtl: process.env.REFRESH_TOKEN_TTL ?? '7d',
     clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
+    mediaMode: process.env.MEDIA_MODE ?? 'local',
   };
 }
